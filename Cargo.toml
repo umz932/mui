@@ -1,0 +1,16 @@
+[package]
+name = "mui"
+description = "A simple drop guard for MaybeUninit"
+version = "0.1.0"
+edition = "2024"
+repository = "https://github.com/umz932/mui"
+readme = "README.md"
+license = "Apache-2.0"
+categories = ["rust-patterns", "memory-management", "no-std::no-alloc"]
+keywords = ["maybeuninit", "guard", "no_std", "no_alloc", "initialization"]
+
+[dependencies]
+zeroize = { version = "1.8.2", default-features = false, optional = true }
+
+[features]
+zeroize = ["dep:zeroize"]
