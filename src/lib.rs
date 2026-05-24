@@ -279,9 +279,6 @@ impl<T> Zeroize for MuiGuard<'_, T> {
 #[cfg(feature = "zeroize")]
 impl<T> ZeroizeOnDrop for MuiGuard<'_, T> {}
 
-mod err;
-pub use err::*;
-
 /// A sequence of [`MuiGuard`] for MUI treating an array of data.
 /// 
 /// This is a slight wrapper of `[MuiGuard<'a, T>; N]` to simplify the code.
@@ -406,97 +403,13 @@ impl<'a, T, const N: usize> From<MuiGuard<'a, [T; N]>> for SeqGuard<'a, T, N> {
     }
 }
 
-/// A fallible version of [`init`].
-/// 
-/// Returns error if the initiator returns an error ([`InitErr::ErrOnInit`]) or the value is not flagged as initialized ([`InitErr::NotInited`]).  
-/// If you want to panic on an uninitialized error, consider using [`InitErr::unwrap_init_err`] as below.
-/// ```should_panic
-/// use mui::{try_init, InitErr};
-/// # struct SomeErr;
-/// let data = try_init::<u32, SomeErr>(|guard| {
-///     // left the MUI uninitialized.
-///     Ok(())
-/// }).map_err(InitErr::unwrap_init_err);
-/// ```
-#[inline]
-pub fn try_init<T, E>(
-    f: impl FnOnce(&mut MuiGuard<'_, T>) -> Result<(), E>,
-) -> Result<T, InitErr<E>> {
-    let mut mui = MaybeUninit::<T>::uninit();
-    let mut g = MuiGuard::new(&mut mui);
-
-    f(&mut g).map_err(InitErr::ErrOnInit)?;
-
-    if g.finish().is_ok() {
-        Ok(unsafe { mui.assume_init() })
-    } else {
-        Err(InitErr::NotInited)
-    }
-}
-
-/// Instantly creates a value with the given initiator.
-///
-/// # Panics
-/// Panics if the value has not been determined to be initialized in the initiator.
-///
-/// # Example
-/// ## A basic usage
-/// ```
-/// # use mui::init;
-/// let data = init(|guard| {
-///     
-///     guard.write(42);
-/// });
-///
-/// assert_eq!(
-///     data,
-///     42
-/// );
-/// ```
-///
-/// ## Field-by-field initialization
-/// ```
-/// # extern crate alloc;
-/// # use alloc::{ vec::Vec, string::String };
-/// # use mui::init;
-/// #[derive(Debug, PartialEq)]
-/// struct Hoge {
-///     title: String,
-///     list: Vec<u32>,
-/// }
-/// 
-/// let hoge = init::<Hoge>(|guard| {
-///     
-///     let ptr = guard.as_mut_ptr();
-///
-///     unsafe { (&raw mut (*ptr).title).write("some text".to_string()); }
-///     unsafe { (&raw mut (*ptr).list).write(vec![810, 114514, 1919]); }
-/// 
-///     // Because the guard cannot detect initialization of the value via the pointer,
-///     // you need to assert the inner value to be initialized.
-///     unsafe { guard.assume_init_mut() };
-/// });
-///
-/// assert_eq!(
-///     hoge,
-///     Hoge {
-///         title: "some text".to_string(),
-///         list: vec![810, 114514, 1919]
-///     }
-/// );
-/// ```
-pub fn init<T>(f: impl FnOnce(&mut MuiGuard<'_, T>)) -> T {
-    try_init::<_, Infallible>(|mui| {
-        f(mui);
-        Ok(())
-    })
-    .expect(UNINIT_ERR_MSG)
-}
+pub mod utils;
 
 #[cfg(test)]
 mod test {
     extern crate std;
     use super::*;
+    use super::utils::init;
     use std::{
         sync::{Arc, Mutex},
         thread::spawn,
