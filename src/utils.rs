@@ -57,7 +57,7 @@ impl<E: Error + 'static> Error for InitErr<E> {
 /// Returns error if the initiator returns an error ([`InitErr::ErrOnInit`]) or the value is not flagged as initialized ([`InitErr::NotInited`]).  
 /// If you want to panic on an uninitialized error, consider using [`InitErr::unwrap_init_err`] as below.
 /// ```should_panic
-/// use mui::{try_init, InitErr};
+/// use mui::utils::{try_init, InitErr};
 /// # struct SomeErr;
 /// let data = try_init::<u32, SomeErr>(|guard| {
 ///     // left the MUI uninitialized.
@@ -88,7 +88,8 @@ pub fn try_init<T, E>(
 /// # Example
 /// ## A basic usage
 /// ```
-/// # use mui::init;
+/// use mui::utils::init;
+///
 /// let data = init(|guard| {
 ///     
 ///     guard.write(42);
@@ -104,7 +105,8 @@ pub fn try_init<T, E>(
 /// ```
 /// # extern crate alloc;
 /// # use alloc::{ vec::Vec, string::String };
-/// # use mui::init;
+/// use mui::utils::init;
+///
 /// #[derive(Debug, PartialEq)]
 /// struct Hoge {
 ///     title: String,
@@ -115,7 +117,7 @@ pub fn try_init<T, E>(
 ///     
 ///     let ptr = guard.as_mut_ptr();
 ///
-///     unsafe { (&raw mut (*ptr).title).write("some text".to_string()); }
+///     unsafe { (&raw mut (*ptr).title).write("the title".to_string()); }
 ///     unsafe { (&raw mut (*ptr).list).write(vec![810, 114514, 1919]); }
 /// 
 ///     // Because the guard cannot detect initialization of the value via the pointer,
@@ -126,7 +128,7 @@ pub fn try_init<T, E>(
 /// assert_eq!(
 ///     hoge,
 ///     Hoge {
-///         title: "some text".to_string(),
+///         title: "the title".to_string(),
 ///         list: vec![810, 114514, 1919]
 ///     }
 /// );
@@ -139,6 +141,8 @@ pub fn init<T>(f: impl FnOnce(&mut MuiGuard<'_, T>)) -> T {
     .expect(UNINIT_ERR_MSG)
 }
 
+/// A fallible variant of [`init_boxed`] 
+/// and a variant of [`try_init`] for a boxed value.
 #[cfg(feature = "alloc")]
 pub fn try_init_boxed<T, E>(f: impl FnOnce(&mut MuiGuard<'_, T>) -> Result<(), E>) -> Result<Box<T>, InitErr<E>> {
     let mut boxed = Box::new_uninit();
@@ -153,10 +157,14 @@ pub fn try_init_boxed<T, E>(f: impl FnOnce(&mut MuiGuard<'_, T>) -> Result<(), E
     }
 }
 
+/// A variant of [`init`] for a boxed value.
+///
+/// This first creates an uninitialized value on the heap, then initializes it with the given
+/// initiator function.
 #[cfg(feature = "alloc")]
 pub fn init_boxed<T>(f: impl FnOnce(&mut MuiGuard<'_, T>)) -> Box<T> {
     try_init_boxed::<_, Infallible>(|g| {
         f(g);
         Ok(())
-    }).unwrap()
+    }).expect(UNINIT_ERR_MSG)
 }
