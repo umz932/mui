@@ -249,24 +249,34 @@ impl<'a, T> From<&'a mut MaybeUninit<T>> for MuiGuard<'a, T> {
 /// This destructor must be disabled when the guard is dropped to use the underlying MUI.
 impl<T> Drop for MuiGuard<'_, T> {
     fn drop(&mut self) {
-        #[cfg(feature = "zeroize")]
-        // NOTE: This simply fills the underlying mem area with zeroes, not `zeroize`s the value with type-specified manners.
-        // That's why `T: Zeroize` is not required.
-        self.mui.zeroize();
-
         if self.inited {
             unsafe {
                 // SAFETY: The value has been determined to be initialized.
                 self.mui.assume_init_drop();
             }
         }
+
+        #[cfg(feature = "zeroize")]
+        // FIXED(2026/5/25): This must be operated after dropping the value because 
+        // 
+        self.mui.zeroize();
     }
 }
 
 #[cfg(feature = "zeroize")]
 /// # Warning
 /// This simply fills the memory area for the underlying value with zeroes without dropping the previous value
-/// (*See:* the [`Zeroize`](https://docs.rs/zeroize/latest/zeroize/trait.Zeroize.html#impl-Zeroize-for-MaybeUninit%3CZ%3E) impl for `MaybeUninit<Z>`).
+/// (*via* the [`Zeroize`](https://docs.rs/zeroize/latest/zeroize/trait.Zeroize.html#impl-Zeroize-for-MaybeUninit%3CZ%3E) impl of `MaybeUninit<Z>`).
+/// 
+/// This impl **does not** run the `zeroize` function implemented on the inner type `T`
+/// ```ignore
+/// use zeroize::Zeroize;
+///
+/// let mut data = MaybeUninit::<Box<[u8; 64]>>::uninit();
+///
+/// ```
+///
+/// This operation breaks all invariants of `T`, thus an access (read or drop) to the zeroized 
 impl<T> Zeroize for MuiGuard<'_, T> {
     fn zeroize(&mut self) {
         self.mui.zeroize();

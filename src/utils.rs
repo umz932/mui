@@ -1,3 +1,5 @@
+//! Utilities for in-place initialization
+//! 
 use core::{
     convert::Infallible,
     mem::MaybeUninit,
