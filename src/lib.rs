@@ -267,16 +267,10 @@ impl<T> Drop for MuiGuard<'_, T> {
 /// # Warning
 /// This simply fills the memory area for the underlying value with zeroes without dropping the previous value
 /// (*via* the [`Zeroize`](https://docs.rs/zeroize/latest/zeroize/trait.Zeroize.html#impl-Zeroize-for-MaybeUninit%3CZ%3E) impl of `MaybeUninit<Z>`).
-/// 
-/// This impl **does not** run the `zeroize` function implemented on the inner type `T`
-/// ```ignore
-/// use zeroize::Zeroize;
 ///
-/// let mut data = MaybeUninit::<Box<[u8; 64]>>::uninit();
-///
-/// ```
-///
-/// This operation breaks all invariants of `T`, thus an access (read or drop) to the zeroized 
+/// # Safety
+/// Access (read, move and drop) to the inner value after this operation may cause UB, because it breaks the invariants of the type `T`.
+/// The underlying value is flagged as uninitialized after the operation.
 impl<T> Zeroize for MuiGuard<'_, T> {
     fn zeroize(&mut self) {
         self.mui.zeroize();
