@@ -17,7 +17,7 @@ use crate::MuiGuard;
 
 pub(crate) const UNINIT_ERR_MSG: &str = "The value was not initialized in the initiator";
 
-/// An error type for [`try_init`](crate::try_init).
+/// An error type for [`try_init`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InitErr<E> {
     /// An error that returned in the initiator function
@@ -61,7 +61,7 @@ impl<E: Error + 'static> Error for InitErr<E> {
 /// ```should_panic
 /// use mui::utils::{try_init, InitErr};
 /// # struct SomeErr;
-/// let data = try_init::<u32, SomeErr>(|guard| {
+/// let data: Result<u32, SomeErr> = try_init::<u32, SomeErr>(|guard| {
 ///     // left the MUI uninitialized.
 ///     Ok(())
 /// }).map_err(InitErr::unwrap_init_err);

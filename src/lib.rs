@@ -66,7 +66,6 @@
 #![warn(missing_docs)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 use core::{
-    convert::Infallible,
     fmt::{self, Debug, Formatter},
     mem::{ManuallyDrop, MaybeUninit},
     ops::{Deref, DerefMut},
