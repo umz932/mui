@@ -1,7 +1,7 @@
 //! A simple drop guard for [`MaybeUninit`]
 //!
 //! Because the inner value of [`MaybeUninit`] (*hereinafter abbreviated as* MUI) never gets dropped unless it is converted to the concrete type (by [`assume_init`](`MaybeUninit::assume_init`)) or manually dropped (by [`assume_init_drop`](`MaybeUninit::assume_init_drop`)),
-//! a memory leak happens and the data on the memory goes out of management if the program panics during initialization (This is the specification of unions).  
+//! a memory leak happens and the data on the memory become unmanaged if the program panics during initialization (This is the specification of unions).  
 //! This crate provides a simple guard type to avoid this problem and reduce some unsafeness.
 //!
 //! # Example
@@ -44,7 +44,7 @@
 //!
 //!     let ptr = guard.as_mut_ptr();
 //!
-//!     unsafe { (&raw mut (*ptr).title).write("some text".to_string()); }
+//!     unsafe { (&raw mut (*ptr).title).write("hoge".to_string()); }
 //!     unsafe { (&raw mut (*ptr).list).write(vec![810, 114514, 1919]); }
 //!
 //!     // Because the guard cannot detect initialization of the value via the pointer,
@@ -57,7 +57,7 @@
 //! assert_eq!(
 //!     hoge,
 //!     Hoge {
-//!         title: "some text".to_string(),
+//!         title: "hoge".to_string(),
 //!         list: vec![810, 114514, 1919]
 //!     }
 //! );
@@ -106,18 +106,20 @@ impl<'a, T> MuiGuard<'a, T> {
     /// let mut guard = MuiGuard::new(&mut mui);
     ///
     /// // First initialization
-    /// guard.write("first text".to_string());
+    /// guard.write("first".to_string());
     ///
     /// // Overwriting the initialized object
-    /// // guard.write("second text".to_string()); <- This results in a memory leak.
-    /// *(guard.get_mut().unwrap()) = "second text".to_string();
+    /// // guard.write("second".to_string()); <- This results in a memory leak.
+    /// if let Some(ref_) = guard.get_mut() {
+    ///     *ref_ = "second".to_string();
+    /// }
     ///
     /// // Finalization
     /// guard.finish().unwrap_or_else(|_| unreachable!("The value has been already initialized as above"));
     ///
     /// assert_eq!(
     ///     unsafe { mui.assume_init() },
-    ///     "second text"
+    ///     "second"
     /// );
     /// ```
     pub const fn write(&mut self, value: T) -> &mut T {

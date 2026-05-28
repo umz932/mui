@@ -119,7 +119,7 @@ pub fn try_init<T, E>(
 ///     
 ///     let ptr = guard.as_mut_ptr();
 ///
-///     unsafe { (&raw mut (*ptr).title).write("the title".to_string()); }
+///     unsafe { (&raw mut (*ptr).title).write("hoge".to_string()); }
 ///     unsafe { (&raw mut (*ptr).list).write(vec![810, 114514, 1919]); }
 /// 
 ///     // Because the guard cannot detect initialization of the value via the pointer,
@@ -130,7 +130,7 @@ pub fn try_init<T, E>(
 /// assert_eq!(
 ///     hoge,
 ///     Hoge {
-///         title: "the title".to_string(),
+///         title: "hoge".to_string(),
 ///         list: vec![810, 114514, 1919]
 ///     }
 /// );
