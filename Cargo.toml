@@ -13,5 +13,6 @@ keywords = ["maybeuninit", "guard", "no_std", "no_alloc", "initialization"]
 zeroize = { version = "1.8.2", default-features = false, optional = true }
 
 [features]
+default = ["alloc"]
 alloc = []
 zeroize = ["dep:zeroize"]

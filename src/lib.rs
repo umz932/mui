@@ -1,7 +1,7 @@
 //! A simple drop guard for [`MaybeUninit`]
 //!
 //! Because the inner value of [`MaybeUninit`] (*hereinafter abbreviated as* MUI) never gets dropped unless it is converted to the concrete type (by [`assume_init`](`MaybeUninit::assume_init`)) or manually dropped (by [`assume_init_drop`](`MaybeUninit::assume_init_drop`)),
-//! a memory leak happens and the data on the memory become unmanaged if the program panics during initialization (This is the specification of unions).  
+//! a memory leak happens and the data on the memory become unmanaged if the program panics during initialization (This is the specification of unions).
 //! This crate provides a simple guard type to avoid this problem and reduce some unsafeness.
 //!
 //! # Example
@@ -11,7 +11,7 @@
 //! # use core::mem::MaybeUninit;
 //! let data = {
 //!     let mut data = MaybeUninit::<u32>::uninit();
-//! 
+//!
 //!     let mut guard = MuiGuard::new(&mut data);
 //!
 //!     guard.write(42);
@@ -50,7 +50,7 @@
 //!     // Because the guard cannot detect initialization of the value via the pointer,
 //!     // validated finalization would fail regardless of the true state of the MUI.
 //!     guard.finish_unchecked();
-//! 
+//!
 //!     unsafe { hoge.assume_init() }
 //! };
 //!
@@ -66,6 +66,7 @@
 #![warn(missing_docs)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 use core::{
+    array::TryFromSliceError,
     fmt::{self, Debug, Formatter},
     mem::{ManuallyDrop, MaybeUninit},
     ops::{Deref, DerefMut},
@@ -74,6 +75,8 @@ use core::{
 
 #[cfg(feature = "zeroize")]
 use zeroize::{Zeroize, ZeroizeOnDrop};
+
+use crate::utils::InitErr;
 
 /// A simple wrapper type of a mutable [`MaybeUninit`] (MUI) reference to clean its inner data when
 /// dropped unexpectedly (e.g. on a panic) during initialization.
@@ -85,6 +88,7 @@ pub struct MuiGuard<'a, T> {
 
 impl<'a, T> MuiGuard<'a, T> {
     /// Creates a new guard
+    #[inline]
     pub const fn new(mui: &'a mut MaybeUninit<T>) -> Self {
         Self { mui, inited: false }
     }
@@ -122,17 +126,20 @@ impl<'a, T> MuiGuard<'a, T> {
     ///     "second"
     /// );
     /// ```
+    #[inline]
     pub const fn write(&mut self, value: T) -> &mut T {
         self.inited = true;
         self.mui.write(value)
     }
 
     /// Gets a raw pointer to the content of the MUI.
+    #[inline(always)]
     pub const fn as_ptr(&self) -> *const T {
         self.mui.as_ptr()
     }
 
     /// Gets a mutable raw pointer to the content of the MUI.
+    #[inline(always)]
     pub const fn as_mut_ptr(&mut self) -> *mut T {
         self.mui.as_mut_ptr()
     }
@@ -146,12 +153,14 @@ impl<'a, T> MuiGuard<'a, T> {
     ///
     /// This also sets the inner flag of this guard for determining if the underlying value is properly initialized,
     /// thus a misuse of this disrupts the safety assumption of this guard.
+    #[inline]
     pub const unsafe fn assume_init_mut(&mut self) -> &mut T {
         self.inited = true;
         unsafe { self.mui.assume_init_mut() }
     }
 
     /// Returns if the underlying MUI has been determined to be initialized.
+    #[inline(always)]
     pub const fn is_inited(&self) -> bool {
         self.inited
     }
@@ -170,12 +179,14 @@ impl<'a, T> MuiGuard<'a, T> {
     /// guard.write(42);
     /// assert_eq!(guard.get_ref(), Some(&42));
     /// ```
+    #[inline]
     pub fn get_ref(&self) -> Option<&T> {
         self.inited.then(|| unsafe { self.mui.assume_init_ref() })
     }
 
     /// Returns a shared ref to the initialized content of the MUI,
     /// or `None` if it's not determined to be initialized.
+    #[inline]
     pub fn get_mut(&mut self) -> Option<&mut T> {
         self.inited.then(|| unsafe { self.mui.assume_init_mut() })
     }
@@ -183,6 +194,7 @@ impl<'a, T> MuiGuard<'a, T> {
     /// Drops the content of the MUI.
     ///
     /// No-op if the value is not determined to be initialized.
+    #[inline]
     pub fn drop_val(&mut self) -> bool {
         if self.inited {
             // SAFETY: The value has been determined to be initialized.
@@ -196,10 +208,15 @@ impl<'a, T> MuiGuard<'a, T> {
         }
     }
 
+    #[inline(always)]
+    pub(crate) fn finish_init_err<E>(self) -> Result<(), InitErr<E>> {
+        self.finish().map_err(|_| utils::InitErr::NotInited)
+    }
+
     /// Consumes this guard and enable use of the underlying MUI.
     ///
     /// Because this guard holds the mutable reference to the MUI,
-    /// it is mandatory to free it before using its instance (e.g. applying [`assume_init`](`MaybeUninit::assume_init`)).  
+    /// it is mandatory to free it before using its instance (e.g. applying [`assume_init`](`MaybeUninit::assume_init`)).
     /// However, just dropping this guard drops the MUI content, which may lead to a use-after-free issue.
     ///
     /// This function suppresses the destructor to avoid the problem.
@@ -209,6 +226,7 @@ impl<'a, T> MuiGuard<'a, T> {
     /// **The destructor is not suppressed to run in such a situation, and still discards the inner value on drop.**
     ///
     /// Ignoring this may cause an access to a malformed value, which leads to an undefined behavior.
+    #[inline]
     #[must_use = "Returns `Err(self)` if the underlying value is not initialized. Ignoring this may cause an access to an invalid value"]
     pub fn finish(self) -> Result<(), Self> {
         if self.inited {
@@ -219,7 +237,7 @@ impl<'a, T> MuiGuard<'a, T> {
         }
     }
 
-    /// Consumes this guard and enable use of the underlying MUI  
+    /// Consumes this guard and enable use of the underlying MUI
     /// without validating if it has been properly initialized.
     ///
     /// This function has the same effect as [`forget(self)`](core::mem::forget), and the equivalent [`let _ = ManuallyDrop::new(self);`](ManuallyDrop).
@@ -230,6 +248,7 @@ impl<'a, T> MuiGuard<'a, T> {
 }
 
 impl<T> Debug for MuiGuard<'_, T> {
+    #[inline]
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         f.debug_struct("MuiGuard")
             .field("mui", &self.mui)
@@ -239,15 +258,17 @@ impl<T> Debug for MuiGuard<'_, T> {
 }
 
 impl<'a, T> From<&'a mut MaybeUninit<T>> for MuiGuard<'a, T> {
+    #[inline(always)]
     fn from(value: &'a mut MaybeUninit<T>) -> Self {
         Self::new(value)
     }
 }
 
-/// When the program panicked before the underlying MUI is converted to the concrete (droppable) type,
-/// the MUI value will be dropped and, if `zeroize` feature is enabled, zeroized away subsequent to drop of this guard by the panic handler.
+/// When the program panicked during initialization,
+/// the underlying value of the MUI will be dropped and, if `zeroize` feature is enabled,
+/// zeroized away subsequent to drop of this guard by the panic handler.
 ///
-/// This destructor must be disabled when the guard is dropped to use the underlying MUI.
+/// This destructor must be disabled before using the MUI to avoid discarding its contents.
 impl<T> Drop for MuiGuard<'_, T> {
     fn drop(&mut self) {
         if self.inited {
@@ -258,8 +279,8 @@ impl<T> Drop for MuiGuard<'_, T> {
         }
 
         #[cfg(feature = "zeroize")]
-        // FIXED(2026/5/25): This must be operated after dropping the value because 
-        // 
+        // FIXED(2026/5/25): Zeroization must be operated after drop of inner value,
+        // or the destructor may run on the malformed value.
         self.mui.zeroize();
     }
 }
@@ -285,46 +306,46 @@ impl<T> Zeroize for MuiGuard<'_, T> {
 impl<T> ZeroizeOnDrop for MuiGuard<'_, T> {}
 
 /// A sequence of [`MuiGuard`] for MUI treating an array of data.
-/// 
+///
 /// This is a slight wrapper of `[MuiGuard<'a, T>; N]` to simplify the code.
-/// 
+///
 /// # Example
 /// ## Element-by-element initialization
 /// ```
 /// # use core::mem::MaybeUninit;
-/// # use mui::SeqGuard;
+/// # use mui::MuiGuardSeq;
 /// let array = {
 ///     let mut array = MaybeUninit::<[u32; 8]>::uninit();
-/// 
-///     let mut guard_seq = SeqGuard::new(&mut array);
-/// 
+///
+///     let mut guard_seq = MuiGuardSeq::new(&mut array);
+///
 ///     for (i, guard) in guard_seq.iter_mut().enumerate() {
 ///         guard.write((i * i) as u32);
 ///     }
-/// 
+///
 ///     guard_seq.finish().unwrap();
-/// 
+///
 ///     unsafe { array.assume_init() }
 /// };
-/// 
+///
 /// assert_eq!(
 ///     array,
 ///     [0, 1, 4, 9, 16, 25, 36, 49]
 /// );
 /// ```
 #[must_use = "The values of the underlying MUI are discarded on drop"]
-pub struct SeqGuard<'a, T, const N: usize>([MuiGuard<'a, T>; N]);
+pub struct MuiGuardSeq<'a, T, const N: usize>([MuiGuard<'a, T>; N]);
 
-impl<'a, T, const N: usize> SeqGuard<'a, T, N> {
+impl<'a, T, const N: usize> MuiGuardSeq<'a, T, N> {
     /// Creates a new sequential guard from those convertible to the referenced array of MUIs
     /// (e.g. [`MaybeUninit<[T; N]>`](https://doc.rust-lang.org/stable/std/mem/union.MaybeUninit.html#impl-AsMut%3C[MaybeUninit%3CT%3E;+N]%3E-for-MaybeUninit%3C[T;+N]%3E)).
     #[inline]
     pub fn new(mui_seq: &'a mut impl AsMut<[MaybeUninit<T>; N]>) -> Self {
-        SeqGuard(mui_seq.as_mut().each_mut().map(MuiGuard::new))
+        mui_seq.as_mut().into()
     }
 
     /// Gets a shared reference to the MUI (if initialized) at the specified index.
-    /// 
+    ///
     /// Returns `None` if the MUI at the index is not initialized or the index is out of bounds.
     #[inline]
     pub fn get_ref(&self, idx: usize) -> Option<&T> {
@@ -332,7 +353,7 @@ impl<'a, T, const N: usize> SeqGuard<'a, T, N> {
     }
 
     /// Gets a mutable reference to the MUI (if initialized) at the specified index.
-    /// 
+    ///
     /// Returns `None` if the MUI at the index is not initialized or the index is out of bounds.
     #[inline]
     pub fn get_mut(&mut self, idx: usize) -> Option<&mut T> {
@@ -346,15 +367,20 @@ impl<'a, T, const N: usize> SeqGuard<'a, T, N> {
     }
 
     /// Consumes this guard and enable use of the underlying MUI(s) without validation.
-    /// 
+    ///
     /// Similar to [`MuiGuard::finish_unchecked`].
     #[inline]
     pub fn finish_unchecked(self) {
         let _ = ManuallyDrop::new(self);
     }
 
+    #[inline(always)]
+    pub(crate) fn finish_init_err<E>(self) -> Result<(), InitErr<E>> {
+        self.finish().map_err(|_| utils::InitErr::NotInited)
+    }
+
     /// Consumes this guard and enable use of the underlying MUI(s).
-    /// 
+    ///
     /// This validates if all of the values have been properly initialized,
     /// and returns `Err(self)` instead of finalizing the guard if not.
     ///
@@ -371,15 +397,13 @@ impl<'a, T, const N: usize> SeqGuard<'a, T, N> {
     }
 }
 
-impl<'a, T, const N: usize> Debug for SeqGuard<'a, T, N> {
+impl<'a, T, const N: usize> Debug for MuiGuardSeq<'a, T, N> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.debug_tuple("SeqGuard")
-         .field(&self.0)
-         .finish()
+        f.debug_tuple("MuiGuardSeq").field(&self.0).finish()
     }
 }
 
-impl<'a, T, const N: usize> Deref for SeqGuard<'a, T, N> {
+impl<'a, T, const N: usize> Deref for MuiGuardSeq<'a, T, N> {
     type Target = [MuiGuard<'a, T>; N];
 
     #[inline]
@@ -388,23 +412,47 @@ impl<'a, T, const N: usize> Deref for SeqGuard<'a, T, N> {
     }
 }
 
-impl<'a, T, const N: usize> DerefMut for SeqGuard<'a, T, N> {
+impl<'a, T, const N: usize> DerefMut for MuiGuardSeq<'a, T, N> {
     #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
     }
 }
 
-impl<'a, T, const N: usize> From<MuiGuard<'a, [T; N]>> for SeqGuard<'a, T, N> {
+impl<'a, T, const N: usize> From<MuiGuard<'a, [T; N]>> for MuiGuardSeq<'a, T, N> {
     #[inline]
     fn from(value: MuiGuard<'a, [T; N]>) -> Self {
         // Disable drop to avoid double drop.
         let value = ManuallyDrop::new(value);
 
-        // SAFETY: Holding ownership of `value`, and it won't be used anymore.
+        // SAFETY: Holds ownership of `value`, and it won't be used anymore.
         let mui = unsafe { ptr::read(&value.mui) };
 
         Self::new(mui)
+    }
+}
+
+impl<'a, T, const N: usize> From<&'a mut MaybeUninit<[T; N]>> for MuiGuardSeq<'a, T, N> {
+    #[inline]
+    fn from(value: &'a mut MaybeUninit<[T; N]>) -> Self {
+        MuiGuard::new(value).into()
+    }
+}
+
+impl<'a, T, const N: usize> From<&'a mut [MaybeUninit<T>; N]> for MuiGuardSeq<'a, T, N> {
+    #[inline]
+    fn from(value: &'a mut [MaybeUninit<T>; N]) -> Self {
+        Self(value.each_mut().map(MuiGuard::new))
+    }
+}
+
+impl<'a, T, const N: usize> TryFrom<&'a mut [MaybeUninit<T>]> for MuiGuardSeq<'a, T, N> {
+    type Error = TryFromSliceError;
+
+    #[inline]
+    fn try_from(value: &'a mut [MaybeUninit<T>]) -> Result<Self, Self::Error> {
+        let mui_seq: Result<&'a mut [MaybeUninit<T>; N], _> = value.try_into();
+        mui_seq.map(Self::from)
     }
 }
 
@@ -413,8 +461,8 @@ pub mod utils;
 #[cfg(test)]
 mod test {
     extern crate std;
-    use super::*;
     use super::utils::init;
+    use super::*;
     use std::{
         sync::{Arc, Mutex},
         thread::spawn,
@@ -467,7 +515,7 @@ mod test {
         let chk = drop_chk.clone();
         let thread = spawn(move || {
             let mut chker = MaybeUninit::<[DropChecker; 3]>::uninit();
-            let mut guard = SeqGuard::new(&mut chker);
+            let mut guard = MuiGuardSeq::new(&mut chker);
 
             guard[0].write(chk);
             panic!();
