@@ -76,8 +76,6 @@ use core::{
 #[cfg(feature = "zeroize")]
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
-use crate::utils::InitErr;
-
 /// A simple wrapper type of a mutable [`MaybeUninit`] (MUI) reference to clean its inner data when
 /// dropped unexpectedly (e.g. on a panic) during initialization.
 #[must_use = "The value of the underlying MUI will be discarded on drop of this guard"]
@@ -206,11 +204,6 @@ impl<'a, T> MuiGuard<'a, T> {
         } else {
             false
         }
-    }
-
-    #[inline(always)]
-    pub(crate) fn finish_init_err<E>(self) -> Result<(), InitErr<E>> {
-        self.finish().map_err(|_| utils::InitErr::NotInited)
     }
 
     /// Consumes this guard and enable use of the underlying MUI.
@@ -372,11 +365,6 @@ impl<'a, T, const N: usize> MuiGuardSeq<'a, T, N> {
     #[inline]
     pub fn finish_unchecked(self) {
         let _ = ManuallyDrop::new(self);
-    }
-
-    #[inline(always)]
-    pub(crate) fn finish_init_err<E>(self) -> Result<(), InitErr<E>> {
-        self.finish().map_err(|_| utils::InitErr::NotInited)
     }
 
     /// Consumes this guard and enable use of the underlying MUI(s).
