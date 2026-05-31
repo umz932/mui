@@ -4,8 +4,6 @@
 
 use core::{
     convert::Infallible,
-    error::Error,
-    fmt::{self, Debug, Display, Formatter},
     mem::MaybeUninit,
 };
 
